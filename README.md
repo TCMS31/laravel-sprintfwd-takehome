@@ -11,7 +11,7 @@ Introduction
 
 Setup
 
-Follow these steps to set up the GIS project on your local machine:
+Follow these steps to set up the project on your local machine:
 Prerequisites
 
     Ensure you have the following software installed on your machine:
