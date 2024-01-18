@@ -1,0 +1,435 @@
+Sprintfwd Teams API - captured request/response transcript
+==========================================================
+Captured on 2026-09-25 against a locally seeded instance:
+
+  php artisan migrate:fresh --seed
+  php artisan serve --host=127.0.0.1 --port=8780
+
+Seed contents: 4 teams, 5 members per team (20 members), 3 projects each
+staffed with 6 members drawn from the whole member pool.
+
+Every response below is the real output of the command shown above it.
+Response headers are filtered to status, content type and the rate limit.
+
+===============================================================
+ 1. GET /api/teams - the list is paginated, with links and meta
+===============================================================
+$ curl -s -i -X GET 'http://127.0.0.1:8780/api/teams?per_page=2' -H 'Accept: application/json'
+HTTP/1.1 200 OK
+Content-Type: application/json
+X-RateLimit-Limit: 60
+X-RateLimit-Remaining: 59
+
+{
+    "data": [
+        {
+            "id": 1,
+            "name": "Batz-O'Conner",
+            "created_at": "2026-09-25T12:08:03+00:00",
+            "updated_at": "2026-09-25T12:08:03+00:00"
+        },
+        {
+            "id": 2,
+            "name": "Gleason PLC",
+            "created_at": "2026-09-25T12:08:03+00:00",
+            "updated_at": "2026-09-25T12:08:03+00:00"
+        }
+    ],
+    "links": {
+        "first": "http://127.0.0.1:8780/api/teams?page=1",
+        "last": "http://127.0.0.1:8780/api/teams?page=2",
+        "prev": null,
+        "next": "http://127.0.0.1:8780/api/teams?page=2"
+    },
+    "meta": {
+        "current_page": 1,
+        "from": 1,
+        "last_page": 2,
+        "links": [
+            {
+                "url": null,
+                "label": "&laquo; Previous",
+                "active": false
+            },
+            {
+                "url": "http://127.0.0.1:8780/api/teams?page=1",
+                "label": "1",
+                "active": true
+            },
+            {
+                "url": "http://127.0.0.1:8780/api/teams?page=2",
+                "label": "2",
+                "active": false
+            },
+            {
+                "url": "http://127.0.0.1:8780/api/teams?page=2",
+                "label": "Next &raquo;",
+                "active": false
+            }
+        ],
+        "path": "http://127.0.0.1:8780/api/teams",
+        "per_page": 2,
+        "to": 2,
+        "total": 4
+    }
+}
+
+===============================================================
+ 2. GET /api/teams/1/members - only that team's members
+===============================================================
+$ curl -s -i -X GET 'http://127.0.0.1:8780/api/teams/1/members?per_page=2' -H 'Accept: application/json'
+HTTP/1.1 200 OK
+Content-Type: application/json
+X-RateLimit-Limit: 60
+X-RateLimit-Remaining: 58
+
+{
+    "data": [
+        {
+            "id": 1,
+            "first_name": "Alyce",
+            "last_name": "Walter",
+            "city": "North Monroeland",
+            "state": "Montana",
+            "country": "Gambia",
+            "team_id": 1,
+            "created_at": "2026-09-25T12:08:03+00:00",
+            "updated_at": "2026-09-25T12:08:03+00:00"
+        },
+        {
+            "id": 2,
+            "first_name": "Berry",
+            "last_name": "Botsford",
+            "city": "West Aniyaberg",
+            "state": "Florida",
+            "country": "Mozambique",
+            "team_id": 1,
+            "created_at": "2026-09-25T12:08:03+00:00",
+            "updated_at": "2026-09-25T12:08:03+00:00"
+        }
+    ],
+    "links": {
+        "first": "http://127.0.0.1:8780/api/teams/1/members?page=1",
+        "last": "http://127.0.0.1:8780/api/teams/1/members?page=3",
+        "prev": null,
+        "next": "http://127.0.0.1:8780/api/teams/1/members?page=2"
+    },
+    "meta": {
+        "current_page": 1,
+        "from": 1,
+        "last_page": 3,
+        "links": [
+            {
+                "url": null,
+                "label": "&laquo; Previous",
+                "active": false
+            },
+            {
+                "url": "http://127.0.0.1:8780/api/teams/1/members?page=1",
+                "label": "1",
+                "active": true
+            },
+            {
+                "url": "http://127.0.0.1:8780/api/teams/1/members?page=2",
+                "label": "2",
+                "active": false
+            },
+            {
+                "url": "http://127.0.0.1:8780/api/teams/1/members?page=3",
+                "label": "3",
+                "active": false
+            },
+            {
+                "url": "http://127.0.0.1:8780/api/teams/1/members?page=2",
+                "label": "Next &raquo;",
+                "active": false
+            }
+        ],
+        "path": "http://127.0.0.1:8780/api/teams/1/members",
+        "per_page": 2,
+        "to": 2,
+        "total": 5
+    }
+}
+
+===============================================================
+ 3. POST /api/teams - create returns 201 and the new resource
+===============================================================
+$ curl -s -i -X POST 'http://127.0.0.1:8780/api/teams' -H 'Accept: application/json' -H 'Content-Type: application/json' -d '{"name":"Platform Engineering"}'
+HTTP/1.1 201 Created
+Content-Type: application/json
+X-RateLimit-Limit: 60
+X-RateLimit-Remaining: 57
+
+{
+    "data": {
+        "id": 5,
+        "name": "Platform Engineering",
+        "created_at": "2026-09-25T12:08:03+00:00",
+        "updated_at": "2026-09-25T12:08:03+00:00"
+    }
+}
+
+===============================================================
+ 4. POST /api/teams - a duplicate name is rejected with 422
+===============================================================
+$ curl -s -i -X POST 'http://127.0.0.1:8780/api/teams' -H 'Accept: application/json' -H 'Content-Type: application/json' -d '{"name":"Platform Engineering"}'
+HTTP/1.1 422 Unprocessable Content
+Content-Type: application/json
+X-RateLimit-Limit: 60
+X-RateLimit-Remaining: 56
+
+{
+    "message": "The name has already been taken.",
+    "errors": {
+        "name": [
+            "The name has already been taken."
+        ]
+    }
+}
+
+===============================================================
+ 5. POST /api/members - a team_id that does not exist is rejected with 422
+===============================================================
+$ curl -s -i -X POST 'http://127.0.0.1:8780/api/members' -H 'Accept: application/json' -H 'Content-Type: application/json' -d '{"first_name":"Ada","last_name":"Lovelace","team_id":424242}'
+HTTP/1.1 422 Unprocessable Content
+Content-Type: application/json
+X-RateLimit-Limit: 60
+X-RateLimit-Remaining: 55
+
+{
+    "message": "The selected team id is invalid.",
+    "errors": {
+        "team_id": [
+            "The selected team id is invalid."
+        ]
+    }
+}
+
+===============================================================
+ 6. POST /api/members - create; the response embeds the member's team
+===============================================================
+$ curl -s -i -X POST 'http://127.0.0.1:8780/api/members' -H 'Accept: application/json' -H 'Content-Type: application/json' -d '{"first_name":"Ada","last_name":"Lovelace","city":"London","country":"United Kingdom","team_id":1}'
+HTTP/1.1 201 Created
+Content-Type: application/json
+X-RateLimit-Limit: 60
+X-RateLimit-Remaining: 54
+
+{
+    "data": {
+        "id": 21,
+        "first_name": "Ada",
+        "last_name": "Lovelace",
+        "city": "London",
+        "state": null,
+        "country": "United Kingdom",
+        "team_id": 1,
+        "team": {
+            "id": 1,
+            "name": "Batz-O'Conner",
+            "created_at": "2026-09-25T12:08:03+00:00",
+            "updated_at": "2026-09-25T12:08:03+00:00"
+        },
+        "created_at": "2026-09-25T12:08:04+00:00",
+        "updated_at": "2026-09-25T12:08:04+00:00"
+    }
+}
+
+===============================================================
+ 7. PATCH /api/members/21/team - move a member to another team
+===============================================================
+$ curl -s -i -X PATCH 'http://127.0.0.1:8780/api/members/21/team' -H 'Accept: application/json' -H 'Content-Type: application/json' -d '{"team_id":2}'
+HTTP/1.1 200 OK
+Content-Type: application/json
+X-RateLimit-Limit: 60
+X-RateLimit-Remaining: 53
+
+{
+    "data": {
+        "id": 21,
+        "first_name": "Ada",
+        "last_name": "Lovelace",
+        "city": "London",
+        "state": null,
+        "country": "United Kingdom",
+        "team_id": 2,
+        "team": {
+            "id": 2,
+            "name": "Gleason PLC",
+            "created_at": "2026-09-25T12:08:03+00:00",
+            "updated_at": "2026-09-25T12:08:03+00:00"
+        },
+        "created_at": "2026-09-25T12:08:04+00:00",
+        "updated_at": "2026-09-25T12:08:04+00:00"
+    }
+}
+
+===============================================================
+ 8. POST /api/projects/1/members/21 - assign a member to a project
+===============================================================
+$ curl -s -i -X POST 'http://127.0.0.1:8780/api/projects/1/members/21' -H 'Accept: application/json'
+HTTP/1.1 201 Created
+Content-Type: application/json
+X-RateLimit-Limit: 60
+X-RateLimit-Remaining: 52
+
+{
+    "message": "Member added to project."
+}
+
+===============================================================
+ 9. POST /api/projects/1/members/21 again - 409, no duplicate row
+===============================================================
+$ curl -s -i -X POST 'http://127.0.0.1:8780/api/projects/1/members/21' -H 'Accept: application/json'
+HTTP/1.1 409 Conflict
+Content-Type: application/json
+X-RateLimit-Limit: 60
+X-RateLimit-Remaining: 51
+
+{
+    "message": "Member is already assigned to this project."
+}
+
+===============================================================
+ 10. GET /api/projects/1/members - the project roster
+===============================================================
+$ curl -s -i -X GET 'http://127.0.0.1:8780/api/projects/1/members?per_page=3' -H 'Accept: application/json'
+HTTP/1.1 200 OK
+Content-Type: application/json
+X-RateLimit-Limit: 60
+X-RateLimit-Remaining: 50
+
+{
+    "data": [
+        {
+            "id": 1,
+            "first_name": "Alyce",
+            "last_name": "Walter",
+            "city": "North Monroeland",
+            "state": "Montana",
+            "country": "Gambia",
+            "team_id": 1,
+            "team": {
+                "id": 1,
+                "name": "Batz-O'Conner",
+                "created_at": "2026-09-25T12:08:03+00:00",
+                "updated_at": "2026-09-25T12:08:03+00:00"
+            },
+            "created_at": "2026-09-25T12:08:03+00:00",
+            "updated_at": "2026-09-25T12:08:03+00:00"
+        },
+        {
+            "id": 4,
+            "first_name": "Gerry",
+            "last_name": "Simonis",
+            "city": "Dorisshire",
+            "state": "Colorado",
+            "country": "Honduras",
+            "team_id": 1,
+            "team": {
+                "id": 1,
+                "name": "Batz-O'Conner",
+                "created_at": "2026-09-25T12:08:03+00:00",
+                "updated_at": "2026-09-25T12:08:03+00:00"
+            },
+            "created_at": "2026-09-25T12:08:03+00:00",
+            "updated_at": "2026-09-25T12:08:03+00:00"
+        },
+        {
+            "id": 6,
+            "first_name": "Eddie",
+            "last_name": "Kautzer",
+            "city": "Port Stephonfort",
+            "state": "Louisiana",
+            "country": "Puerto Rico",
+            "team_id": 2,
+            "team": {
+                "id": 2,
+                "name": "Gleason PLC",
+                "created_at": "2026-09-25T12:08:03+00:00",
+                "updated_at": "2026-09-25T12:08:03+00:00"
+            },
+            "created_at": "2026-09-25T12:08:03+00:00",
+            "updated_at": "2026-09-25T12:08:03+00:00"
+        }
+    ],
+    "links": {
+        "first": "http://127.0.0.1:8780/api/projects/1/members?page=1",
+        "last": "http://127.0.0.1:8780/api/projects/1/members?page=3",
+        "prev": null,
+        "next": "http://127.0.0.1:8780/api/projects/1/members?page=2"
+    },
+    "meta": {
+        "current_page": 1,
+        "from": 1,
+        "last_page": 3,
+        "links": [
+            {
+                "url": null,
+                "label": "&laquo; Previous",
+                "active": false
+            },
+            {
+                "url": "http://127.0.0.1:8780/api/projects/1/members?page=1",
+                "label": "1",
+                "active": true
+            },
+            {
+                "url": "http://127.0.0.1:8780/api/projects/1/members?page=2",
+                "label": "2",
+                "active": false
+            },
+            {
+                "url": "http://127.0.0.1:8780/api/projects/1/members?page=3",
+                "label": "3",
+                "active": false
+            },
+            {
+                "url": "http://127.0.0.1:8780/api/projects/1/members?page=2",
+                "label": "Next &raquo;",
+                "active": false
+            }
+        ],
+        "path": "http://127.0.0.1:8780/api/projects/1/members",
+        "per_page": 3,
+        "to": 3,
+        "total": 7
+    }
+}
+
+===============================================================
+ 11. GET /api/teams/9999 - unknown ids answer JSON 404, not an HTML page
+===============================================================
+$ curl -s -i -X GET 'http://127.0.0.1:8780/api/teams/9999' -H 'Accept: application/json'
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+X-RateLimit-Limit: 60
+X-RateLimit-Remaining: 49
+
+{
+    "message": "Resource not found."
+}
+
+===============================================================
+ 12. The conflict in step 9 wrote no second pivot row
+===============================================================
+$ sqlite3 database/database.sqlite \
+    "SELECT project_id, member_id, COUNT(*) AS rows FROM project_member
+     WHERE project_id = 1 AND member_id = 21 GROUP BY project_id, member_id;"
+
+project_id=1  member_id=21  rows=1
+
+===============================================================
+ 13. DELETE /api/members/21 - 204 No Content; the pivot row cascades away
+===============================================================
+$ curl -s -i -X DELETE 'http://127.0.0.1:8780/api/members/21' -H 'Accept: application/json'
+HTTP/1.1 204 No Content
+X-RateLimit-Limit: 60
+X-RateLimit-Remaining: 48
+
+(empty body)
+
+$ sqlite3 database/database.sqlite "SELECT COUNT(*) FROM project_member WHERE member_id = 21;"
+
+rows remaining for member 21: 0
+

@@ -1,0 +1,65 @@
+$ php artisan test
+
+
+   PASS  Tests\Unit\MembershipServiceTest
+  ✓ it adds a member that is not yet on the project                      0.02s  
+  ✓ it does not write when the member is already on the project
+  ✓ it returns null when moving a member that does not exist
+  ✓ it returns the moved member
+
+   PASS  Tests\Feature\MemberApiTest
+  ✓ it creates a member                                                  0.17s  
+  ✓ it rejects a member with a team that does not exist                  0.01s  
+  ✓ it rejects a member with no team                                     0.01s  
+  ✓ it shows a member with their team                                    0.01s  
+  ✓ it updates a member                                                  0.01s  
+  ✓ it deletes a member                                                  0.01s  
+  ✓ it moves a member to another team                                    0.01s  
+  ✓ moving a member to an unknown team is rejected and changes nothing   0.01s  
+  ✓ moving an unknown member returns 404                                 0.01s  
+  ✓ listing members includes each team in a bounded number of queries    0.01s  
+
+   PASS  Tests\Feature\ProjectApiTest
+  ✓ it creates a project                                                 0.01s  
+  ✓ it rejects a project without a name                                  0.01s  
+  ✓ it lists projects paginated                                          0.01s  
+  ✓ it shows and updates and deletes a project                           0.01s  
+  ✓ deleting a project removes its membership rows                       0.01s  
+  ✓ it lists only the members of that project                            0.01s  
+  ✓ members of an unknown project returns 404                            0.01s  
+
+   PASS  Tests\Feature\ProjectMembershipTest
+  ✓ it adds a member to a project                                        0.01s  
+  ✓ adding the same member twice is a conflict and creates one row       0.01s  
+  ✓ adding a member to an unknown project returns 404                    0.01s  
+  ✓ adding an unknown member to a project returns 404                    0.01s  
+  ✓ a member can be on several projects                                  0.01s  
+  ✓ the schema refuses a duplicate membership row                        0.01s  
+
+   PASS  Tests\Feature\TeamApiTest
+  ✓ it lists teams paginated                                             0.01s  
+  ✓ index caps per page so a client cannot pull the whole table          0.01s  
+  ✓ it creates a team                                                    0.01s  
+  ✓ it rejects a team without a name                                     0.01s  
+  ✓ it rejects a duplicate team name                                     0.01s  
+  ✓ it shows a team                                                      0.01s  
+  ✓ it returns json 404 for an unknown team                              0.01s  
+  ✓ it updates a team                                                    0.01s  
+  ✓ updating a team to its own name is allowed                           0.01s  
+  ✓ it deletes a team                                                    0.01s  
+  ✓ it lists the members of a team and not other teams members           0.01s  
+  ✓ members of an unknown team is a 404 not an empty list                0.01s  
+
+  Tests:    39 passed (135 assertions)
+  Duration: 0.55s
+
+
+$ vendor/bin/pint --test
+
+
+  ............................................................................
+  ..........
+
+  ──────────────────────────────────────────────────────────────────── Laravel  
+    PASS   .......................................................... 86 files  
+
