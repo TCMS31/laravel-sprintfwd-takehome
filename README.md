@@ -1,94 +1,158 @@
 # Sprintfwd Teams API
 
-A small Laravel JSON API for tracking teams, the members who belong to them, and
-the projects those members work on. A member belongs to exactly one team and can
-be assigned to any number of projects.
+A Laravel 10 JSON API for teams, the members who belong to them, and the projects
+those members are staffed onto. A member belongs to exactly one team (`team_id` is
+not nullable) and may be assigned to any number of projects.
 
-This is a take-home exercise, so it stays deliberately narrow: three resources,
-a handful of relationship endpoints, and no features beyond what the brief asks
-for. The interesting parts are the layering, the schema, and the test suite.
+The name is accurate: this is the SprintFwd take-home exercise and the subject
+really is teams, members and projects. It stays a modelling and layering exercise
+rather than a product — three resources, four relationship endpoints, no auth, no
+users. `app/`, `database/` and `tests/` are the work. The rest is stock skeleton.
 
----
+## The data model
 
-## Captured output
+Four tables. The pivot is where the correctness lives.
 
-There is no user interface beyond a route index at `/`, so the evidence here is
-real request/response traffic rather than screenshots. The full transcript -
-thirteen exchanges captured against a seeded instance - lives in
-[`docs/api-transcript.txt`](docs/api-transcript.txt), and the test and linter
-output in [`docs/test-run.txt`](docs/test-run.txt). The excerpts below are
-copied from that file verbatim.
-
-Listing teams, paginated and rate limited:
-
-```
-$ curl -s -i -X GET 'http://127.0.0.1:8780/api/teams?per_page=2' -H 'Accept: application/json'
-HTTP/1.1 200 OK
-Content-Type: application/json
-X-RateLimit-Limit: 60
-X-RateLimit-Remaining: 59
-
-{
-    "data": [
-        {
-            "id": 1,
-            "name": "Batz-O'Conner",
-            "created_at": "2026-09-25T12:08:03+00:00",
-            "updated_at": "2026-09-25T12:08:03+00:00"
-        },
-        {
-            "id": 2,
-            "name": "Gleason PLC",
-            "created_at": "2026-09-25T12:08:03+00:00",
-            "updated_at": "2026-09-25T12:08:03+00:00"
-        }
-    ],
-    "links": {
-        "first": "http://127.0.0.1:8780/api/teams?page=1",
-        "last": "http://127.0.0.1:8780/api/teams?page=2",
-        "prev": null,
-        "next": "http://127.0.0.1:8780/api/teams?page=2"
-    },
-    "meta": {
-        "current_page": 1,
-        "from": 1,
-        "last_page": 2,
-        "links": [ ... 4 page links elided; see docs/api-transcript.txt ... ],
-        "path": "http://127.0.0.1:8780/api/teams",
-        "per_page": 2,
-        "to": 2,
-        "total": 4
+```mermaid
+erDiagram
+    teams {
+        bigint id PK
+        string name "unique"
     }
-}
-```
-
-Validation is rejected at the edge rather than surfacing as a driver error:
-
-```
-$ curl -s -i -X POST 'http://127.0.0.1:8780/api/members' -H 'Accept: application/json' -H 'Content-Type: application/json' -d '{"first_name":"Ada","last_name":"Lovelace","team_id":424242}'
-HTTP/1.1 422 Unprocessable Content
-Content-Type: application/json
-X-RateLimit-Limit: 60
-X-RateLimit-Remaining: 55
-
-{
-    "message": "The selected team id is invalid.",
-    "errors": {
-        "team_id": [
-            "The selected team id is invalid."
-        ]
+    members {
+        bigint id PK
+        string first_name
+        string last_name
+        string city "nullable"
+        string state "nullable"
+        string country "nullable"
+        bigint team_id FK "restrict on delete"
     }
-}
+    projects {
+        bigint id PK
+        string name "unique"
+    }
+    project_member {
+        bigint id PK
+        bigint project_id FK "cascade on delete"
+        bigint member_id FK "cascade on delete"
+    }
+
+    teams ||--o{ members : "has exactly one per member"
+    projects ||--o{ project_member : "staffed by"
+    members ||--o{ project_member : "assigned through"
 ```
 
-Assigning a member to a project is idempotent at the API boundary - the second
-attempt is a `409`, and the database is left with exactly one pivot row:
+Three schema decisions worth naming:
+
+- **`unique(project_id, member_id)`** on the pivot. The application checks for a
+  duplicate before writing, but the constraint is what makes a second row
+  impossible when two requests race past that check. A test asserts the constraint
+  directly: *`ProjectMembershipTest::the schema refuses a duplicate membership row`*.
+- **The pivot FKs are `cascadeOnDelete`**, so deleting a project takes its
+  membership rows with it and leaves the members alone —
+  *`ProjectApiTest::deleting a project removes its membership rows`*.
+  `members.team_id` is `restrictOnDelete` instead, so a team with members cannot be
+  deleted. That one is enforced by the schema but not covered by a test.
+- **`team_id` carries its own index**, created by `foreignId()->constrained()`.
+  "List the members of team X" is the hottest query here and filters on `team_id`
+  alone, so it needs an index led by that column.
+
+## Run it
+
+PHP 8.1+ and Composer. SQLite is the default, so no database server is needed.
+
+```bash
+composer install
+cp .env.example .env
+php artisan key:generate
+touch database/database.sqlite
+php artisan migrate --seed
+php artisan serve
+```
+
+The seeder builds 4 teams, 5 members in each, and 3 projects each staffed with 6
+of those 20 members. `http://127.0.0.1:8000/api/teams` is then live, and `/`
+serves a hand-written index of the main endpoints.
+
+```bash
+composer test          # php artisan test
+composer lint          # vendor/bin/pint --test
+```
+
+## Endpoints
+
+Nineteen routes, all under `/api` and all in the `api` middleware group: stateless,
+rate limited to 60 per minute per IP, route-model binding on the relationship paths.
+
+| Method | Path | Notes |
+| --- | --- | --- |
+| `GET` | `/api/teams` | paginated, `per_page` clamped to 100 |
+| `POST` | `/api/teams` | name required and unique |
+| `GET` `PUT`/`PATCH` `DELETE` | `/api/teams/{team}` | update ignores the team's own name when checking uniqueness |
+| `GET` | `/api/teams/{team}/members` | paginated, 404 on an unknown team rather than an empty page |
+| `GET` | `/api/members` | paginated, each row eager loads its team |
+| `POST` | `/api/members` | `team_id` must exist |
+| `GET` `PUT`/`PATCH` `DELETE` | `/api/members/{member}` | |
+| `PATCH` | `/api/members/{member}/team` | move a member to another team |
+| `GET` | `/api/projects` | paginated |
+| `POST` | `/api/projects` | name required and unique |
+| `GET` `PUT`/`PATCH` `DELETE` | `/api/projects/{project}` | |
+| `GET` | `/api/projects/{project}/members` | only that project's members |
+| `POST` | `/api/projects/{project}/members/{member}` | assign a member — see below |
+
+Validation lives in seven Form Requests, so a bad payload is a `422` with a field
+map rather than a driver error, and every response goes through an API Resource, so
+the wire format is a choice rather than whatever is in `$fillable` today. Under
+`/api` the handler renders `ModelNotFoundException` and `NotFoundHttpException` as
+JSON even when the client forgot an `Accept` header.
+
+## Assigning a member to a project
+
+This is the only endpoint that is not CRUD, and it is the one that touches every
+layer. It is idempotent at the boundary: the second attempt is a `409` and the
+database still holds exactly one row.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Client
+    participant Router as routes/api.php
+    participant Ctrl as ProjectController
+    participant Svc as MembershipService
+    participant Repo as ProjectMemberRepository
+    participant DB as Database
+
+    Client->>Router: POST /api/projects/1/members/21
+    Router->>Router: throttle:api - 60 per minute
+    Router->>DB: route-model bind Project 1 and Member 21
+    alt either id is unknown
+        DB-->>Client: 404 Resource not found.
+    else both exist
+        Router->>Ctrl: addMember(Project, Member)
+        Ctrl->>Svc: addMemberToProject
+        Svc->>Repo: isMemberInProject
+        Repo->>DB: SELECT from project_member
+        alt already assigned
+            Repo-->>Svc: true
+            Svc-->>Ctrl: false
+            Ctrl-->>Client: 409 Conflict
+        else not yet assigned
+            Repo-->>Svc: false
+            Svc->>Repo: addMemberToProject
+            Repo->>DB: syncWithoutDetaching - unique index enforces one row
+            Svc-->>Ctrl: true
+            Ctrl-->>Client: 201 Created
+        end
+    end
+```
+
+Captured against a seeded instance, verbatim from
+[`docs/api-transcript.txt`](docs/api-transcript.txt):
 
 ```
 $ curl -s -i -X POST 'http://127.0.0.1:8780/api/projects/1/members/21' -H 'Accept: application/json'
 HTTP/1.1 201 Created
-Content-Type: application/json
-X-RateLimit-Limit: 60
 X-RateLimit-Remaining: 52
 
 {
@@ -97,8 +161,6 @@ X-RateLimit-Remaining: 52
 
 $ curl -s -i -X POST 'http://127.0.0.1:8780/api/projects/1/members/21' -H 'Accept: application/json'
 HTTP/1.1 409 Conflict
-Content-Type: application/json
-X-RateLimit-Limit: 60
 X-RateLimit-Remaining: 51
 
 {
@@ -112,326 +174,77 @@ $ sqlite3 database/database.sqlite \
 project_id=1  member_id=21  rows=1
 ```
 
----
+There is no UI here beyond that route index, so the evidence on disk is traffic
+rather than screenshots: twelve request/response pairs and two direct database
+queries in that transcript, plus the test and linter output in
+[`docs/test-run.txt`](docs/test-run.txt).
 
-## Architecture
-
-Requests flow inward through four layers, and every arrow points at an
-abstraction rather than a concrete class: controllers depend on the repository
-*interfaces*, never on Eloquent.
-
-```mermaid
-flowchart TD
-    client["HTTP client"]
-
-    subgraph http["HTTP layer"]
-        routes["routes/api.php<br/>api middleware group:<br/>throttle + route-model binding"]
-        requests["Form Requests<br/>StoreMemberRequest, UpdateTeamRequest, ...<br/>validation only"]
-        controllers["Controllers<br/>TeamController, MemberController, ProjectController<br/>extend BaseController"]
-        resources["API Resources<br/>TeamResource, MemberResource, ProjectResource<br/>response shape"]
-    end
-
-    subgraph domain["Domain layer"]
-        service["MembershipService<br/>rules that span aggregates"]
-    end
-
-    subgraph contracts["Contracts"]
-        ifaces["TeamRepositoryInterface<br/>MemberRepositoryInterface<br/>ProjectRepositoryInterface<br/>ProjectMemberRepositoryInterface"]
-    end
-
-    subgraph persistence["Persistence layer"]
-        repos["Eloquent repositories<br/>extend BaseRepository"]
-        models["Models<br/>Team, Member, Project"]
-        db[("Database<br/>MySQL or SQLite")]
-    end
-
-    client --> routes
-    routes --> requests
-    requests --> controllers
-    controllers --> service
-    controllers --> ifaces
-    service --> ifaces
-    controllers --> resources
-    resources --> client
-    ifaces -. "bound in RepositoryServiceProvider" .-> repos
-    repos --> models
-    models --> db
-```
-
-**The pattern is a repository layer behind interfaces, with a thin domain
-service for cross-aggregate rules.** Controllers translate HTTP to method calls
-and back; they hold no business logic. `MembershipService` owns the two
-decisions that touch more than one aggregate — whether a member is already on a
-project, and moving a member between teams.
-
-`BaseController` and `BaseRepository` are both abstract. `store` and `update`
-are deliberately *not* on `BaseController`: each resource validates through its
-own Form Request, and PHP will not let a subclass narrow an inherited
-`Request` parameter, so keeping them per-controller stays explicit.
-
----
-
-## Request flow
-
-Assigning a member to a project touches every layer, so it makes the clearest
-sequence:
-
-```mermaid
-sequenceDiagram
-    autonumber
-    actor Client
-    participant Router as routes/api.php
-    participant Ctrl as ProjectController
-    participant Svc as MembershipService
-    participant Repo as ProjectMemberRepository
-    participant DB as Database
-
-    Client->>Router: POST /api/projects/1/members/21
-    Router->>Router: throttle:api (60/min)
-    Router->>DB: resolve Project 1 and Member 21
-    alt either id is unknown
-        DB-->>Client: 404 {"message":"Resource not found."}
-    else both exist
-        Router->>Ctrl: addMember(Project, Member)
-        Ctrl->>Svc: addMemberToProject(project, member)
-        Svc->>Repo: isMemberInProject(project, member)
-        Repo->>DB: SELECT ... FROM project_member
-        DB-->>Repo: exists?
-        alt already assigned
-            Repo-->>Svc: true
-            Svc-->>Ctrl: false
-            Ctrl-->>Client: 409 Conflict
-        else not yet assigned
-            Repo-->>Svc: false
-            Svc->>Repo: addMemberToProject(project, member)
-            Repo->>DB: syncWithoutDetaching (unique index enforces one row)
-            Repo-->>Svc: done
-            Svc-->>Ctrl: true
-            Ctrl-->>Client: 201 Created
-        end
-    end
-```
-
----
-
-## Quickstart
-
-Requires PHP 8.1+ and Composer. SQLite is the default, so no database server is
-needed.
-
-```bash
-composer install
-cp .env.example .env
-php artisan key:generate
-touch database/database.sqlite
-php artisan migrate --seed
-php artisan serve
-```
-
-The API is then at `http://127.0.0.1:8000/api/teams`, and `/` lists every route.
-
-With Docker instead (see [Limitations](#limitations) — this has been authored
-but not yet built):
-
-```bash
-cp .env.example .env && php artisan key:generate
-DB_PASSWORD=choose-one docker compose up --build
-# API on http://localhost:8780
-```
-
----
-
-## Configuration
-
-Copy `.env.example` to `.env`. Everything has a working default except
-`APP_KEY`.
-
-| Variable | Required | Default | Purpose |
-| --- | --- | --- | --- |
-| `APP_NAME` | no | `Sprintfwd Teams API` | Shown on the route index at `/`. |
-| `APP_ENV` | no | `local` | `local`, `testing` or `production`. Outside production, Eloquent throws on lazy loading and on silently discarded attributes. |
-| `APP_KEY` | **yes** | — | Encryption key. Generate with `php artisan key:generate`; the app will not boot without it. |
-| `APP_DEBUG` | no | `true` | Set `false` in production so stack traces are not returned to clients. |
-| `APP_TIMEZONE` | no | `UTC` | Application timezone. Leave as UTC; all timestamps are serialised as ISO-8601 with an explicit offset. |
-| `APP_URL` | no | `http://localhost:8000` | Base URL used to build pagination links. |
-| `DB_CONNECTION` | no | `sqlite` | `sqlite` or `mysql`. |
-| `DB_DATABASE` | no | `database/database.sqlite` (absolute) | For SQLite, leave **unset** so the absolute `database_path()` default is used — a relative path breaks under `php artisan serve`, whose worker runs from a different working directory. For MySQL, the schema name. |
-| `DB_HOST` | mysql only | `127.0.0.1` | MySQL host. |
-| `DB_PORT` | mysql only | `3306` | MySQL port. |
-| `DB_USERNAME` | mysql only | `forge` | MySQL user. |
-| `DB_PASSWORD` | mysql only | empty | MySQL password. Required by `docker-compose.yml`, which refuses to start without it. |
-| `LOG_CHANNEL` | no | `stack` | Use `stderr` in a container. |
-| `LOG_LEVEL` | no | `debug` | Minimum level written. |
-| `CACHE_DRIVER` | no | `file` | Cache store. `array` under test. |
-| `QUEUE_CONNECTION` | no | `sync` | Nothing is queued today; see [Design notes](#design-notes). |
-| `SESSION_DRIVER` | no | `file` | Only the `/` route uses a session; the API is stateless. |
-| `APP_SEED` | no | `false` | Docker only: set `true` to run the seeder on container start. |
-
----
-
-## Development
-
-```bash
-composer test          # php artisan test
-composer lint          # vendor/bin/pint --test
-composer lint:fix      # vendor/bin/pint
-```
-
-Tests run against an in-memory SQLite database configured in `phpunit.xml`, so
-they need no database server and leave nothing behind. `tests/Feature` drives
-the real container end to end — routes, Form Requests, repositories, Eloquent
-and the schema — with nothing mocked, so a regression anywhere in that stack
-fails a test. `tests/Unit` covers `MembershipService`'s decision logic in
-isolation.
-
-Formatting is [Laravel Pint](https://laravel.com/docs/pint) with the `laravel`
-preset plus a few rules pinned in `pint.json` (sorted imports, single quotes,
-trailing commas, no unused imports).
-
----
-
-## Project structure
+## How the code is arranged
 
 ```
-app/
-  Http/
-    Controllers/        BaseController + one per resource; HTTP translation only
-    Requests/           Form Requests; all validation lives here
-    Resources/          JSON shape for Team, Member and Project
-  Interfaces/           Repository contracts that controllers depend on
-  Repositories/         Eloquent implementations of those contracts
-  Services/             MembershipService: rules spanning more than one aggregate
-  Models/               Team, Member, Project
-  Providers/
-    RepositoryServiceProvider.php   Binds each interface to its implementation
-    AppServiceProvider.php          Strict Eloquent guards outside production
-database/
-  migrations/           teams, members, projects, project_member
-  factories/            Model factories used by tests and the seeder
-  seeders/              DatabaseSeeder: 4 teams, 20 members, 3 staffed projects
-docs/
-  api-transcript.txt    Captured request/response pairs
-  test-run.txt          Captured test and linter output
-routes/
-  api.php               Every application endpoint
-  web.php               The route index at /
-tests/
-  Feature/              End-to-end tests through the real container
-  Unit/                 MembershipService in isolation
+app/Http/Controllers/    BaseController plus one per resource. HTTP translation only.
+app/Http/Requests/       Seven Form Requests. All validation.
+app/Http/Resources/      JSON shape for Team, Member, Project.
+app/Interfaces/          The contracts controllers and the service depend on.
+app/Repositories/        Eloquent implementations, bound in RepositoryServiceProvider.
+app/Services/            MembershipService: the two rules that span aggregates.
+app/Models/              Team, Member, Project.
 ```
 
-### Routes
+Controllers depend on the repository *interfaces*, never on Eloquent, and hold no
+business logic. `store`/`update` are deliberately *not* on the abstract
+`BaseController`: each resource validates through its own Form Request, and PHP
+will not let a subclass narrow an inherited `Request` parameter.
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `GET` | `/api/teams` | List teams, paginated |
-| `POST` | `/api/teams` | Create a team |
-| `GET` | `/api/teams/{team}` | Show a team |
-| `PUT`/`PATCH` | `/api/teams/{team}` | Update a team |
-| `DELETE` | `/api/teams/{team}` | Delete a team |
-| `GET` | `/api/teams/{team}/members` | Members of a team, paginated |
-| `GET` | `/api/members` | List members, paginated, each with its team |
-| `POST` | `/api/members` | Create a member |
-| `GET` | `/api/members/{member}` | Show a member |
-| `PUT`/`PATCH` | `/api/members/{member}` | Update a member |
-| `DELETE` | `/api/members/{member}` | Delete a member |
-| `PATCH` | `/api/members/{member}/team` | Move a member to another team |
-| `GET` | `/api/projects` | List projects, paginated |
-| `POST` | `/api/projects` | Create a project |
-| `GET` | `/api/projects/{project}` | Show a project |
-| `PUT`/`PATCH` | `/api/projects/{project}` | Update a project |
-| `DELETE` | `/api/projects/{project}` | Delete a project |
-| `GET` | `/api/projects/{project}/members` | Members assigned to a project |
-| `POST` | `/api/projects/{project}/members/{member}` | Assign a member to a project |
+`AppServiceProvider` turns on `preventLazyLoading()` and
+`preventSilentlyDiscardingAttributes()` outside production, so an accidental N+1
+or a mass-assignment typo throws in development and under test instead of shipping
+quietly.
 
----
+Nothing is queued or cached — every operation is one short transaction. The seam is
+the repository contract: read-through caching or a different storage engine is a new
+class and one line in `RepositoryServiceProvider`, touching no controller or test.
 
-## Design notes
+## Tests
 
-**The API belongs in `routes/api.php`.** The endpoints originally lived in
-`routes/web.php` under a manual `api` prefix, which put a JSON API inside the
-`web` middleware group: session cookies, `ShareErrorsFromSession`, and CSRF
-verification on every write. It also meant the `api` rate limiter defined in
-`RouteServiceProvider` was never applied, because nothing ran in the group it
-belongs to. Moving the routes makes the API stateless and throttled — the
-`X-RateLimit-*` headers in `docs/api-transcript.txt` are the proof — and enables
-route-model binding, which is what turns an unknown id into a clean 404 instead
-of a 500.
+```
+Tests:    39 passed (135 assertions)
+PASS   .......................................................... 86 files
+```
 
-**Every list is paginated and capped.** `BaseRepository::paginate()` replaced an
-unbounded `Model::all()`. `per_page` is clamped to 100 in `BaseController`, so
-`?per_page=1000000` cannot be used to pull an entire table into memory; there is
-a test for exactly that.
+`tests/Feature` (35 tests, four files) drives the real container end to end —
+routes, Form Requests, repositories, Eloquent, the schema — with **nothing
+mocked**, so a regression anywhere in that stack fails a test. `tests/Unit` covers
+`MembershipService`'s branching in isolation. Everything runs against in-memory
+SQLite configured in `phpunit.xml`: no database server, nothing left behind.
 
-**The real bottleneck was the schema, not the query volume.** This dataset is
-small, so the honest scalability work here is indexing and correctness rather
-than caching or queues:
+One test is worth singling out. `MemberApiTest::listing members includes each team
+in a bounded number of queries` asserts both that every row carries its team *and*
+the query bound. Asserting only the query count would pass even with the eager load
+removed, because `whenLoaded()` omits the key rather than lazy-loading it.
 
-- `members` carried a composite index on `(id, team_id)`. Led by the primary
-  key, that index can never serve "members of team X", which is the hottest
-  query in the application. It is now a plain index on `team_id`, created by
-  `foreignId()->constrained()`.
-- The pivot table was created as `projects_members` while both models declared
-  `project_member`, so every pivot query failed at runtime. The table is now
-  `project_member`, with foreign keys to both sides and a `unique(project_id,
-  member_id)` constraint, so a duplicate assignment is impossible even if two
-  requests race past the application-level check.
-- `MemberRepository::paginate()` eager loads `team`. Without it a page of 15
-  members would either omit the team entirely or, if the serialiser touched the
-  relation directly, issue one query per row.
+## Known gaps
 
-**Lazy loading is an error outside production.** `AppServiceProvider` enables
-`Model::preventLazyLoading()` and `preventSilentlyDiscardingAttributes()`, so
-an accidental N+1 or a mass-assignment typo fails loudly in development and in
-the test suite instead of shipping quietly.
-
-**Responses go through API Resources.** Controllers never return a model
-directly, so the wire format is a deliberate choice rather than whatever
-happens to be in `$fillable` on the day. `whenLoaded()` keeps a relation out of
-the payload unless it was explicitly eager loaded.
-
-**Errors are JSON under `/api`.** The exception handler renders
-`ModelNotFoundException` and `NotFoundHttpException` as JSON for any request
-matching `api/*`, so a client that forgets an `Accept` header still gets JSON
-rather than Laravel's HTML error page.
-
-**Nothing is queued, and nothing is cached.** Every operation here is a single
-short transaction; adding a queue or a cache layer would be ceremony rather than
-engineering. The seam for it exists — repositories are behind interfaces, so a
-caching decorator is a new class and one line in `RepositoryServiceProvider`.
-
-**Extensibility seam.** The one seam a future developer actually needs is the
-repository contract. Swapping the storage engine, adding read-through caching,
-or pointing a resource at a different service means writing a new implementation
-of `TeamRepositoryInterface` and rebinding it — no controller, Form Request or
-test changes.
-
----
-
-## Limitations
-
-- **There is no authentication or authorisation.** The exercise defines no users
-  and no roles, so every endpoint is open to any caller. Adding an auth system
-  would be inventing requirements; the rate limiter is the only protection in
-  place. Before this were deployed anywhere public it would need
+- **No authentication or authorisation.** The exercise defines no users and no
+  roles, so every endpoint is open and the rate limiter is the only protection.
+  Adding an auth system would be inventing requirements. Going public would mean
   `auth:sanctum` on the route group and a policy per resource.
-- **The Docker image has been authored but never built.** `Dockerfile`,
-  `docker-compose.yml` and `.dockerignore` are written to a multi-stage,
-  non-root, healthchecked standard and `docker compose config` parses cleanly,
-  but no `docker build` or `docker compose up` has been run against them. Treat
-  them as unverified.
-- **The container serves via `php artisan serve`.** That is fine for review and
-  wrong for production, which would want php-fpm behind nginx.
 - **Dependencies are pinned to Laravel 10, which is end of life.** `composer
-  audit` reports 48 advisories across 14 packages, and current Composer refuses
-  to resolve `laravel/framework ^10.10` at all because every 10.x release has an
-  open advisory. Upgrading to a supported major is the right fix and is a
-  deliberate non-goal here, because rewriting the bootstrap and middleware
-  layout of a take-home would obscure the work being reviewed.
-- **No soft deletes and no audit trail.** Deleting a project removes its
-  membership rows outright.
-- **Pagination is offset-based.** Fine at this size; a large table would want
-  cursor pagination, which Laravel supports on the same query builder.
+  audit` reports 48 advisories across 14 packages, `laravel/framework` among them,
+  and Composer now refuses to resolve `laravel/framework ^10.10` at all because
+  every 10.x release has an open advisory. `composer install` from the committed
+  lock still works. Moving to a supported major is the right fix and a deliberate
+  non-goal here: it rewrites the bootstrap and middleware layout and would bury
+  the work being reviewed.
+- **The Docker files have never been built or booted.** `Dockerfile`,
+  `docker-compose.yml`, `.dockerignore` and `docker/entrypoint.sh` are multi-stage,
+  non-root and healthchecked, and `docker compose config` parses (and refuses to
+  start with `DB_PASSWORD` unset), but no `docker build` and no `docker compose up`
+  has been run against them. Treat them as unverified. The container would also
+  serve via `php artisan serve`, fine for review and wrong for production.
+- **Tests run on SQLite while the MySQL config is the production target.**
+  Standard Laravel practice, but the unique-constraint and cascade behaviours
+  asserted above are not verified against MySQL.
+- **Offset pagination**, no soft deletes, no audit trail. Fine at this size.
 - **`personal_access_tokens` and `password_reset_tokens` migrations are stock
-  Laravel scaffolding** left in place. Nothing uses them — there is no `User`
-  model in this application.
+  scaffolding** left in place. Nothing uses them — there is no `User` model.
